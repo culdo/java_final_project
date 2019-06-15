@@ -35,7 +35,13 @@ public class LINEAuto {
         search_input = wait.until(ExpectedConditions.presenceOfElementLocated(By.id("_search_input")));
     }
 
-    public String[] readMembers() {
+    public void waitLogin() {
+        search_input = wait.until(ExpectedConditions.presenceOfElementLocated(By.id("_search_input")));
+    }
+
+    public String[] readMembers(String room) {
+        checkRoom(room);
+
         WebElement room_info = wait.until(ExpectedConditions.presenceOfElementLocated(By.className("mdRGT04Txt")));
         room_info.click();
         List<WebElement> member_array = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(

@@ -1,5 +1,7 @@
 import javax.swing.*;
 import java.awt.*;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
@@ -17,6 +19,7 @@ class SwingWorkerProcessor extends SwingWorker<Void, Integer> {
     private boolean isBotmode;
     private String msgTemp;
     private String room;
+    private SimpleDateFormat dateFormat;
 
     public SwingWorkerProcessor(LINEGui panel, int iteration, int intervalInSeconds,
                                 String msgTemp, String room,  boolean isBotmode) {
@@ -33,6 +36,8 @@ class SwingWorkerProcessor extends SwingWorker<Void, Integer> {
         if (this.intervalInSeconds < 0) {
             this.intervalInSeconds = 0;
         }
+        dateFormat = new SimpleDateFormat("HH時mm分ss.SSS秒");
+
     }
 
     @Override
@@ -46,11 +51,14 @@ class SwingWorkerProcessor extends SwingWorker<Void, Integer> {
     }
 
     private void botModetask() throws Exception {
-        String[] placeholder = {"訊息數", "誰", "訊息"};
+        String[] placeholder = {"訊息數", "誰", "訊息", "時間"};
         int counter = 1;
+        System.out.println("i got in botmode");
         while(true) {
+            String dateString = dateFormat.format(new Date());
             String[] result = LINEGui.LineHelper.checkNewMsg(room,"Other");
-            String[] repStr = {Integer.toString(counter), result[0], result[1]};
+            String[] repStr = {Integer.toString(counter), result[0], result[1], dateString};
+
             if(result[1]!=null) {
                 sendRoomMessage(placeholder, repStr);
                 this.publish(counter);
@@ -66,9 +74,13 @@ class SwingWorkerProcessor extends SwingWorker<Void, Integer> {
     }
 
     private void timeModetask() throws Exception {
-        String[] placeholder = {"訊息數"};
+        String[] placeholder = {"訊息數", "時間"};
+        System.out.println("i got in timemode");
         for (int counter = 1; counter <= iteration || iteration == 0; counter++) {
-            String[] repStr = {Integer.toString(counter)};
+            String dateString = dateFormat.format(new Date());
+            System.out.println(dateString);
+            String[] repStr = {Integer.toString(counter), dateString};
+
             sendRoomMessage(placeholder, repStr);
             this.publish(counter);
             if (Thread.interrupted()) {
@@ -98,6 +110,7 @@ class SwingWorkerProcessor extends SwingWorker<Void, Integer> {
             for (int i = 0; i < placeholders.length; i++) {
                 if (m.group(1).equals(placeholders[i])) {
                     newString = replaceStrings[i];
+                    break;
                 }
             }
             m.appendReplacement(sb, newString);
@@ -127,7 +140,7 @@ class SwingWorkerProcessor extends SwingWorker<Void, Integer> {
     }
 }
 
-public class LINEGui {
+public class LINEGui extends JFrame {
     private JComboBox cbRoom;
     private JSpinner spDelay;
     private JTextField tfMsg;
@@ -143,6 +156,14 @@ public class LINEGui {
     private JSpinner spTimes;
     private JRadioButton rbTimemode;
     private JRadioButton rbChatbot;
+    private JComboBox cbSetSender;
+    private JTextField tfKeyword;
+    private JPanel card1;
+    private JPanel card2;
+    private JPanel cards;
+    private JPanel plBase;
+    private JPanel plMode;
+    private JRadioButton rbPeek;
     private JDialog loginDialog;
     public static LINEAuto LineHelper;
     private SwingWorkerProcessor processor;
@@ -151,33 +172,64 @@ public class LINEGui {
     public LINEGui() {
         spDelay.setValue(1);
         setButtonStatus(true);
-        rbTimemode.setSelected(true);
+        plTable.setVisible(false);
+
+        CardLayout cl = (CardLayout)(cards.getLayout());
 
         btStart.addActionListener(e -> startProcessing());
         btCancel.addActionListener(e -> cancelProcessing());
-        rbChatbot.addActionListener(e -> spDelay.setEnabled(false));
-        rbTimemode.addActionListener(e -> spDelay.setEnabled(true));
+        rbChatbot.addActionListener(e -> {
+            tfMsg.setText("機器人已發送(訊息數)則，訊息由(誰)說了(訊息)");
+            cl.show(cards, "Card2");
+            plTable.setVisible(false);
+            setSize(550, 500);
+        });
+        rbTimemode.addActionListener(e -> {
+            tfMsg.setText("機器人已發送(訊息數)則");
+            cl.show(cards, "Card1");
+            plTable.setVisible(false);
+            setSize(550, 500);
+        });
+        rbPeek.addActionListener(e -> {
+            plTable.setVisible(true);
+            setSize(800, 500);
+        });
+
+        setTitle("LINE自動操作小幫手");
+        setContentPane(plMain);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setSize(550, 500);
+        setLocationRelativeTo(null);
+        setVisible(true);
+        toFront();
+        setAlwaysOnTop(true);
     }
 
     public void setButtonStatus(boolean canStart) {
-        Component[] plCom = {btStart, btCancel, cbRoom, tfMsg,
-                spDelay, spTimes, rbChatbot, rbTimemode};
+        Component[] plCom = {btStart, cbRoom, tfMsg, spDelay, spTimes, rbChatbot,
+                                rbTimemode, rbPeek, tfKeyword, cbSetSender};
         for (Component com : plCom
         ) {
-            if (com == btCancel) {
-                if (canStart) {
-                    com.setEnabled(false);
-                } else {
-                    com.setEnabled(true);
-                }
+            if (canStart) {
+                com.setEnabled(true);
             } else {
-                if (canStart) {
-                    com.setEnabled(true);
-                } else {
-                    com.setEnabled(false);
-                }
+                com.setEnabled(false);
             }
         }
+        if (canStart) {
+            btCancel.setEnabled(false);
+        } else {
+            btCancel.setEnabled(true);
+        }
+//        plOption.setEnabled(canStart);
+//        plMode.setEnabled(canStart);
+//        if (canStart) {
+//            btCancel.setEnabled(false);
+//            btStart.setEnabled(true);
+//        } else {
+//            btCancel.setEnabled(true);
+//            btStart.setEnabled(false);
+//        }
     }
 
     public void startProcessing() {
@@ -215,18 +267,6 @@ public class LINEGui {
 
         SwingUtilities.invokeLater(() -> {
             LINEGui demoGui = new LINEGui();
-            final JFrame frame = new JFrame("LINE自動操作小幫手");
-//        demoGui.loginDialog.addWindowListener(new WindowAdapter() {
-//            public void windowClosing(WindowEvent e) {
-//                frame.dispose();
-//            }
-//        });
-            frame.setContentPane(demoGui.plMain);
-            frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-//        frame.pack();
-            frame.setSize(800, 500);
-            frame.setLocationRelativeTo(null);
-            frame.setVisible(true);
         });
 
 
@@ -248,10 +288,7 @@ public class LINEGui {
         }
 
         LineHelper = new LINEAuto();
-        LineHelper.login("george0228489372@yahoo.com.tw", "wuorsut");
-//        loginDialog = new LineLogin(LineHelper);
-//        loginDialog.setVisible(true);
-
+        LineHelper.waitLogin();
         cbRoom = new JComboBox(LineHelper.readRooms());
     }
 }

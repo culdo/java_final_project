@@ -5,6 +5,7 @@ public class test_gui {
     private JButton button1;
     private JButton button2;
     private JPanel pn;
+    private JTabbedPane tabbedPane1;
 
     public static void main(String[] args) {
         JFrame frame = new JFrame("test_gui");
