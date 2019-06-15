@@ -67,7 +67,14 @@ public class LINEAuto {
         try {
             TimeUnit.MILLISECONDS.sleep(500);
         }catch (InterruptedException e) {
-            System.out.println("wtf");
+            String why;
+            Throwable cause = e.getCause();
+            if (cause != null) {
+                why = cause.getMessage();
+            } else {
+                why = e.getMessage();
+            }
+            System.err.println("InterruptedException: " + why);
         }
         element = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("#_search > div > .MdBtn01Delete01")));
         element.click();
@@ -79,21 +86,28 @@ public class LINEAuto {
     /*
     setwho param: Own, Other
      */
-    public String checkNewMsg(String setwho) {
+    public String[] checkNewMsg(String room, String setwho) {
         WebElement latest_msg;
         List<WebElement> msg_array;
         String data_local_id_now;
         String new_text = null;
+
+        checkRoom(room);
 
         if(setwho == null) {
             msg_array = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(
                     By.className("MdRGT07Cont")));
         } else {
             msg_array = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(
-                    By.className("mdRGT07" + setwho)));
+                    By.cssSelector(".MdRGT07Cont.mdRGT07" + setwho)));
         }
         latest_msg = msg_array.get(msg_array.size()-1);
         data_local_id_now = latest_msg.getAttribute("data-local-id");
+
+        String sender = "自己";
+        if(setwho!=null) {
+            sender = latest_msg.findElement(By.className("mdRGT07Ttl")).getText();
+        }
 
         if(!data_local_id.equals(data_local_id_now)) {
             data_local_id = data_local_id_now;
@@ -108,7 +122,7 @@ public class LINEAuto {
             }
         }
 
-        return new_text;
+        return new String[]{sender, new_text};
     }
 
     public String readMsg() {
@@ -116,7 +130,19 @@ public class LINEAuto {
         return msg_array.get(msg_array.size()-1).getText();
     }
 
-    public void sendMsg(String msg) {
+    public void checkRoom(String room) {
+        boolean isInRoom = false;
+        if(browser.findElements(By.className("mdRGT04Ttl")).size()>0) {
+            isInRoom = browser.findElement(By.className("mdRGT04Ttl")).getText().equals(room);
+        }
+        if(!isInRoom) {
+            chooseRoom(room);
+            System.out.println("NotInRoom");
+        }
+    }
+
+    public void sendMsg(String room, String msg) {
+        checkRoom(room);
         String jquery = "$('#_chat_room_input').text(arguments[0])";
         ((JavascriptExecutor)browser).executeScript(jquery, msg);
 
@@ -126,6 +152,7 @@ public class LINEAuto {
                 input_area.sendKeys(Keys.ENTER);
                 loop = false;
             } catch (WebDriverException e) {
+                input_area = browser.findElement(By.id("_chat_room_input"));
                 input_area.click();
             }
         }
@@ -134,13 +161,14 @@ public class LINEAuto {
     public static void main(String[] args) {
         LINEAuto test_Line = new LINEAuto();
         test_Line.login("george0228489372@yahoo.com.tw", "wuorsut");
-        test_Line.chooseRoom("Alo Smo");
-
-        test_Line.sendMsg("Test successfully!!!");
-        while (true) {
-            String msg = test_Line.checkNewMsg(null);
-            if(msg!=null)
+//        test_Line.sendMsg("Alo Smo", "Test successfully!!!");
+        while(true) {
+            String[] result = test_Line.checkNewMsg("java期末測試群","Other");
+            String msg = String.format("%s說了%s\n", result[0], result[1]);
+            if(result[1]!=null) {
                 System.out.println(msg);
+                test_Line.sendMsg("java期末測試群", msg);
+            }
         }
 
         //Close the browser
