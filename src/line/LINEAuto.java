@@ -2,6 +2,8 @@ package line;
 
 import org.openqa.selenium.*;
 import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.interactions.Actions;
+import org.openqa.selenium.support.ui.ExpectedCondition;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.openqa.selenium.chrome.ChromeOptions;
@@ -15,52 +17,77 @@ public class LINEAuto {
     private String data_local_id;
     private WebElement input_area;
     private WebElement search_input;
+    private Actions actions;
 
     public LINEAuto() {
         String ext_path = System.getenv("LOCALAPPDATA") + "/Google/Chrome/User Data"+"/Default/Extensions/ophjlpahpchlmihnnnihgmmeilfjmjjc/2.2.2_0";
+        System.setProperty("webdriver.chrome.driver",System.getProperty("user.dir")+"/chromedriver.exe");
 
         ChromeOptions chrome_option = new ChromeOptions();
         chrome_option.addArguments("--load-extension=" + ext_path);
         browser = new ChromeDriver(chrome_option);
-        wait = new WebDriverWait(browser, 99);
+        wait = new WebDriverWait(browser, 9999);
         browser.get("chrome-extension://ophjlpahpchlmihnnnihgmmeilfjmjjc/index.html");
+        actions = new Actions(browser);
     }
 
     public void login(String username, String pwd) {
-        WebElement element = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("#line_login_email")));
+        WebDriverWait longWait = new WebDriverWait(browser, 120);
+        WebElement element = longWait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("#line_login_email")));
 
         element.sendKeys(username + Keys.TAB + pwd + Keys.ENTER);
 //        element = wait.until(ExpectedConditions.presenceOfElementLocated(By.className("mdCMN01Code")));
 
-        search_input = wait.until(ExpectedConditions.presenceOfElementLocated(By.id("_search_input")));
+        search_input = longWait.until(ExpectedConditions.presenceOfElementLocated(By.id("_search_input")));
     }
 
     public void waitLogin() {
+        WebElement qr_code = wait.until(ExpectedConditions.presenceOfElementLocated(By.id("login_qr_btn")));
+        qr_code.click();
         search_input = wait.until(ExpectedConditions.presenceOfElementLocated(By.id("_search_input")));
     }
 
     public String[] readMembers(String room) {
         checkRoom(room);
 
-        WebElement room_info = wait.until(ExpectedConditions.presenceOfElementLocated(By.className("mdRGT04Txt")));
-        room_info.click();
-        List<WebElement> member_array = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(
-                By.className("mdRGT13Ttl")));
-        // size-1 to exclude user self
-        String[] member_names = new String[member_array.size()-1];
-        for (int i=1;i<member_names.length;i++) {
-            member_names[i]= member_array.get(i).getText();
+        WebElement profile_title = wait.until(ExpectedConditions.presenceOfElementLocated(By.className("mdRGT04Txt")));
+        profile_title.click();
+        WebElement profile_page = wait.until(ExpectedConditions.presenceOfElementLocated(
+                By.cssSelector(".MdBox04")));
+
+        if(browser.findElements(By.className("MdRGT13List")).size()>0) {
+            List<WebElement> member_array = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(
+                    By.cssSelector(".mdRGT13Ttl")));
+            final WebElement lastMember = member_array.get(member_array.size()-1);
+            actions.moveToElement(lastMember);
+            actions.perform();
+            wait.until(new ExpectedCondition<Boolean>() {
+                public Boolean apply(WebDriver d) {
+                    return lastMember.getText().length() != 0;
+                }
+            });
+            // size-1 to exclude user self
+            String[] member_names = new String[member_array.size()];
+            member_names[0] = "任何人";
+            for (int i = 1; i < member_names.length; i++) {
+                member_names[i] = member_array.get(i).getText();
+                System.out.println(member_names[i]);
+            }
+            browser.findElement(By.className("MdBtn01Close02")).click();
+            return member_names;
+        }else{
+            browser.findElement(By.className("MdBtn01Close02")).click();
+            return null;
         }
-        return member_names;
     }
 
     public String[] readRooms() {
-        List<WebElement> room_array = wait.until(ExpectedConditions.numberOfElementsToBeMoreThan(
-                By.cssSelector("#_chat_list_body>li"),3));
+        List<WebElement> room_array = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(
+                By.cssSelector("#_chat_list_body>li")));
         String[] room_names = new String[room_array.size()];
         for (int i=0;i<room_names.length;i++) {
             room_names[i]= room_array.get(i).getAttribute("title");
-            System.out.println(room_names[i]);
+//            System.out.println(room_names[i]);
         }
         return room_names;
     }
@@ -101,13 +128,17 @@ public class LINEAuto {
         checkRoom(room);
 
         if(setwho == null) {
-            msg_array = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(
-                    By.className("MdRGT07Cont")));
+            latest_msg = wait.until(ExpectedConditions.presenceOfElementLocated(
+                    By.cssSelector(".MdRGT07Cont:last-child")));
         } else {
-            msg_array = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(
-                    By.cssSelector(".MdRGT07Cont.mdRGT07" + setwho)));
+            latest_msg = wait.until(ExpectedConditions.presenceOfElementLocated(
+                    By.cssSelector(".MdRGT07Cont.mdRGT07" + setwho+":last-child")));
         }
-        latest_msg = msg_array.get(msg_array.size()-1);
+//        latest_msg.click();
+//        actions.moveToElement(latest_msg);
+//        actions.contextClick(latest_msg);
+//        actions.perform();
+//        latest_msg = msg_array.get(msg_array.size()-1);
         data_local_id_now = latest_msg.getAttribute("data-local-id");
 
         String sender = "自己";
@@ -138,10 +169,13 @@ public class LINEAuto {
 
     public void checkRoom(String room) {
         boolean isInRoom = false;
+
         if(browser.findElements(By.className("mdRGT04Ttl")).size()>0) {
             isInRoom = browser.findElement(By.className("mdRGT04Ttl")).getText().equals(room);
         }
-        if(!isInRoom) {
+        if(isInRoom) {
+            input_area = browser.findElement(By.id("_chat_room_input"));
+        }else{
             chooseRoom(room);
             System.out.println("NotInRoom");
         }
@@ -149,8 +183,9 @@ public class LINEAuto {
 
     public void sendMsg(String room, String msg) {
         checkRoom(room);
-        String jquery = "$('#_chat_room_input').text(arguments[0])";
+        String jquery = "var obj = $('#_chat_room_input').text(arguments[0]);obj.html(obj.html().replace(/\\n/g,'<br/>'));";
         ((JavascriptExecutor)browser).executeScript(jquery, msg);
+        System.out.println(msg);
 
         boolean loop = true;
         while (loop) {

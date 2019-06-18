@@ -1,5 +1,6 @@
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.*;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
@@ -9,7 +10,9 @@ import java.util.regex.Pattern;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 
+import com.google.common.base.Joiner;
 import line.LINEAuto;
+import line_gui.LineLogin;
 
 
 class SwingWorkerProcessor extends SwingWorker<Void, Integer> {
@@ -19,15 +22,19 @@ class SwingWorkerProcessor extends SwingWorker<Void, Integer> {
     private boolean isBotmode;
     private String msgTemp;
     private String room;
+    private String sender;
+    private String keyword;
     private SimpleDateFormat dateFormat;
 
     public SwingWorkerProcessor(LINEGui panel, int iteration, int intervalInSeconds,
-                                String msgTemp, String room,  boolean isBotmode) {
+                                String msgTemp, String room, String sender, String keyword, boolean isBotmode) {
         this.panel = panel;
         this.iteration = iteration;
         this.isBotmode = isBotmode;
         this.msgTemp = msgTemp;
         this.room = room;
+        this.sender = sender;
+        this.keyword = keyword;
 
         if (this.iteration < 0) {
             this.iteration = 0;
@@ -37,11 +44,11 @@ class SwingWorkerProcessor extends SwingWorker<Void, Integer> {
             this.intervalInSeconds = 0;
         }
         dateFormat = new SimpleDateFormat("HH時mm分ss.SSS秒");
-
     }
 
     @Override
     protected Void doInBackground() throws Exception{
+        LINEGui.LineHelper.chooseRoom(room);
         if(!isBotmode){
             timeModetask();
         }else{
@@ -57,17 +64,25 @@ class SwingWorkerProcessor extends SwingWorker<Void, Integer> {
         while(true) {
             String dateString = dateFormat.format(new Date());
             String[] result = LINEGui.LineHelper.checkNewMsg(room,"Other");
-            String[] repStr = {Integer.toString(counter), result[0], result[1], dateString};
+            String[] replaceStr = {Integer.toString(counter), result[0], result[1], dateString};
 
-            if(result[1]!=null) {
-                sendRoomMessage(placeholder, repStr);
-                this.publish(counter);
-                if (Thread.interrupted()) {
-                    throw new InterruptedException();
+            if(result[1]!=null && result[0]!=null) {
+                boolean custom_trigger = (sender.equals("任何人") || sender.equals(result[0])) &&
+                        (keyword.equals("(任何字)") || result[1].contains(keyword));
+
+                if (custom_trigger) {
+                    System.out.println("enter send scope");
+                    sendRoomMessage(placeholder, replaceStr);
+                    this.publish(counter);
+                    if (Thread.interrupted()) {
+                        System.out.println("Be Interrpted");
+                        throw new InterruptedException();
+                    }
+                    counter++;
                 }
-                counter++;
             }
             if(this.isCancelled()) {
+                System.out.println("Canceled broken.");
                 break;
             }
         }
@@ -100,7 +115,7 @@ class SwingWorkerProcessor extends SwingWorker<Void, Integer> {
     }
 
     private static String msgFormatter(String msg, String[] placeholders, String[] replaceStrings) {
-        String pattern = String.format("\\((%s)\\)", String.join("|", placeholders));
+        String pattern = String.format("\\((%s)\\)", Joiner.on("|").join(placeholders));
         Pattern p = Pattern.compile(pattern);
         Matcher m = p.matcher(msg);
         StringBuffer sb = new StringBuffer();
@@ -143,7 +158,7 @@ class SwingWorkerProcessor extends SwingWorker<Void, Integer> {
 public class LINEGui extends JFrame {
     private JComboBox cbRoom;
     private JSpinner spDelay;
-    private JTextField tfMsg;
+//    private JTextField taMsg;
     private JButton btStart;
     private JButton btCancel;
     private JTable tbMsgs;
@@ -164,35 +179,100 @@ public class LINEGui extends JFrame {
     private JPanel plBase;
     private JPanel plMode;
     private JRadioButton rbPeek;
+    private JTextArea taMsg;
     private JDialog loginDialog;
     public static LINEAuto LineHelper;
     private SwingWorkerProcessor processor;
 
 
-    public LINEGui() {
+    public LINEGui(LINEAuto LineHelper_) {
+        LineHelper = LineHelper_;
+
+        cbRoom.setModel(new DefaultComboBoxModel(LineHelper.readRooms()));
         spDelay.setValue(1);
         setButtonStatus(true);
         plTable.setVisible(false);
 
-        CardLayout cl = (CardLayout)(cards.getLayout());
+        final CardLayout cl = (CardLayout)(cards.getLayout());
 
-        btStart.addActionListener(e -> startProcessing());
-        btCancel.addActionListener(e -> cancelProcessing());
-        rbChatbot.addActionListener(e -> {
-            tfMsg.setText("機器人已發送(訊息數)則，訊息由(誰)說了(訊息)");
-            cl.show(cards, "Card2");
-            plTable.setVisible(false);
-            setSize(550, 500);
+        btStart.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                LINEGui.this.startProcessing();
+            }
         });
-        rbTimemode.addActionListener(e -> {
-            tfMsg.setText("機器人已發送(訊息數)則");
-            cl.show(cards, "Card1");
-            plTable.setVisible(false);
-            setSize(550, 500);
+        btCancel.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                LINEGui.this.cancelProcessing();
+            }
         });
-        rbPeek.addActionListener(e -> {
-            plTable.setVisible(true);
-            setSize(800, 500);
+        rbChatbot.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                String[] members = LineHelper.readMembers((String) cbRoom.getSelectedItem());
+                if (members != null) {
+                    cbSetSender.setModel(new DefaultComboBoxModel(members));
+                }
+
+                cl.show(cards, "Card2");
+                plTable.setVisible(false);
+                LINEGui.this.setSize(550, 500);
+            }
+        });
+        rbTimemode.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                cl.show(cards, "Card1");
+                plTable.setVisible(false);
+                LINEGui.this.setSize(550, 500);
+            }
+        });
+        rbPeek.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                plTable.setVisible(true);
+                LINEGui.this.setSize(800, 500);
+            }
+        });
+//        cbRoom.addMouseListener(new MouseAdapter() {
+//                                    @Override
+//                                    public void mousePressed(MouseEvent e) {
+//                                        cbRoom.setModel(new DefaultComboBoxModel(LineHelper.readRooms()));
+//                                    }
+//                                }
+//        );
+        cbRoom.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusGained(FocusEvent e) {
+            int num = cbRoom.getItemCount();
+            String[] newRooms = LineHelper.readRooms();
+            boolean isEqual = true;
+            // Get items
+            for (int i = 0; i < num&&isEqual; i++) {
+                String item = (String) cbRoom.getItemAt(i);
+                if(!newRooms[i].equals(item)) {
+                    isEqual = false;
+                    break;
+                }
+            }
+            if(!isEqual) {
+                cbRoom.setModel(new DefaultComboBoxModel(LineHelper.readRooms()));
+            }
+            }
+        });
+        cbRoom.addItemListener(new ItemListener() {
+            @Override
+            public void itemStateChanged(ItemEvent e) {
+                String room = (String) e.getItem();
+                LineHelper.checkRoom(room);
+                if (rbChatbot.isSelected()) {
+                    String[] members = LineHelper.readMembers(room);
+                    if (members != null) {
+                        cbSetSender.setModel(new DefaultComboBoxModel(members));
+                    }
+                }
+            }
         });
 
         setTitle("LINE自動操作小幫手");
@@ -200,13 +280,13 @@ public class LINEGui extends JFrame {
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setSize(550, 500);
         setLocationRelativeTo(null);
-        setVisible(true);
         toFront();
         setAlwaysOnTop(true);
+        setVisible(true);
     }
 
     public void setButtonStatus(boolean canStart) {
-        Component[] plCom = {btStart, cbRoom, tfMsg, spDelay, spTimes, rbChatbot,
+        Component[] plCom = {btStart, cbRoom, taMsg, spDelay, spTimes, rbChatbot,
                                 rbTimemode, rbPeek, tfKeyword, cbSetSender};
         for (Component com : plCom
         ) {
@@ -221,22 +301,14 @@ public class LINEGui extends JFrame {
         } else {
             btCancel.setEnabled(true);
         }
-//        plOption.setEnabled(canStart);
-//        plMode.setEnabled(canStart);
-//        if (canStart) {
-//            btCancel.setEnabled(false);
-//            btStart.setEnabled(true);
-//        } else {
-//            btCancel.setEnabled(true);
-//            btStart.setEnabled(false);
-//        }
     }
 
     public void startProcessing() {
         setButtonStatus(false);
         processor = new SwingWorkerProcessor(this, (Integer) spTimes.getValue(),
-                                            (Integer) spDelay.getValue(), tfMsg.getText(),
-                                            (String) cbRoom.getSelectedItem(), rbChatbot.isSelected());
+                                            (Integer) spDelay.getValue(), taMsg.getText(),
+                                            (String) cbRoom.getSelectedItem(), (String) cbSetSender.getSelectedItem(),
+                tfKeyword.getText(), rbChatbot.isSelected());
         processor.execute();
     }
 
@@ -264,17 +336,6 @@ public class LINEGui extends JFrame {
     }
 
     public static void main(String[] args) {
-
-        SwingUtilities.invokeLater(() -> {
-            LINEGui demoGui = new LINEGui();
-        });
-
-
-    }
-
-    private void createUIComponents() {
-        // TODO: place custom component creation code here
-
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
         } catch (UnsupportedLookAndFeelException e) {
@@ -287,8 +348,17 @@ public class LINEGui extends JFrame {
             // handle exception
         }
 
-        LineHelper = new LINEAuto();
-        LineHelper.waitLogin();
-        cbRoom = new JComboBox(LineHelper.readRooms());
+        LineLogin dialog = new LineLogin();
+        final LINEAuto LINEHelper =  new LINEAuto();
+        LINEHelper.waitLogin();
+        dialog.dispose();
+
+        SwingUtilities.invokeLater(new Runnable() {
+            @Override
+            public void run() {
+                LINEGui demoGui = new LINEGui(LINEHelper);
+            }
+        });
+
     }
 }
